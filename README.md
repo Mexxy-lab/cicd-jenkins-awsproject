@@ -1,5 +1,7 @@
 ## Continous integration and Delivery project set up using AWS services, Jenkins, Checkstyle maven, sonarqube scanner for code analysis
 
+    - For this project I would be setting it up locally using VMs and not cloud EC2 instances due to cost. 
+
 - This project involves setting up of a continous integration pipeline for v-profile application written in Java. We would be using the below AWS web services for this project:
 
     - Jenkins                                                           | Used for pipeline build and continous integration
@@ -56,4 +58,28 @@
     - Connect all jobs again with Build Pipeline 
     - Test auto trigger one more time 
 
+## Backend server set up using vagrant.exe file to provision the backend services follow the below set up. 
 
+    - Use the instructions in the pdf file attached to provision services.
+
+Services
+1. Nginx => Web Service working on port 80
+2. Tomcat => Application Server working on port 8080
+3. RabbitMQ => Broker/Queuing Agent works on port 5672
+4. Memcache => DB Caching works on port 11211 and 11111
+5. ElasticSearch => Indexing/Search service
+6. MySQL => SQL Database works on port 3306
+
+Setup should be done in below mentioned order if setting up manually. I would be setting this all up at once using vagrant with embedded script for each VM. 
+
+1. MySQL (Database SVC)
+2. Memcache (DB Caching SVC)
+3. RabbitMQ (Broker/Queue SVC)
+4. Tomcat (Application SVC)
+5. Nginx (Web SVC)
+
+```bash
+vagrant.exe up
+vagrant.exe global-status                   | Used to show all previous vms 
+vagrant.exe global-status --prune           } Used to prune all old vms, would clear all previous VMs
+```
