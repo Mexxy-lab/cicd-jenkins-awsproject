@@ -78,8 +78,3 @@ Setup should be done in below mentioned order if setting up manually. I would be
 4. Tomcat (Application SVC)
 5. Nginx (Web SVC)
 
-```bash
-vagrant.exe up
-vagrant.exe global-status                   | Used to show all previous vms 
-vagrant.exe global-status --prune           } Used to prune all old vms, would clear all previous VMs
-```
