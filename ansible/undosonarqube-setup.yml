@@ -1,0 +1,133 @@
+---
+- name: Undo SonarQube Setup on CentOS 9
+  hosts: sonarqubeserver
+  become: yes
+  vars:
+    sonar_version: "8.3.0.34182"
+    sonar_user: sonar
+    sonar_group: sonar
+    sonar_db_user: sonar
+    sonar_db_name: sonarqube
+    sonar_home: /opt/sonarqube
+
+  tasks:
+
+    - name: Stop and disable SonarQube service
+      systemd:
+        name: sonarqube
+        enabled: no
+        state: stopped
+      ignore_errors: true
+
+    - name: Remove SonarQube systemd service file
+      file:
+        path: /etc/systemd/system/sonarqube.service
+        state: absent
+
+    - name: Reload systemd daemon after removing service
+      systemd:
+        daemon_reload: yes
+
+    - name: Remove SonarQube home directory
+      file:
+        path: "{{ sonar_home }}"
+        state: absent
+
+    - name: Remove extracted SonarQube versioned directory
+      file:
+        path: "/opt/sonarqube-{{ sonar_version }}"
+        state: absent
+
+    - name: Remove downloaded SonarQube zip file
+      file:
+        path: "/tmp/sonarqube-{{ sonar_version }}.zip"
+        state: absent
+
+    - name: Remove SonarQube user
+      user:
+        name: "{{ sonar_user }}"
+        state: absent
+        remove: yes
+
+    - name: Remove SonarQube group
+      group:
+        name: "{{ sonar_group }}"
+        state: absent
+
+    - name: Drop sonar database
+      become_user: postgres
+      postgresql_db:
+        name: "{{ sonar_db_name }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Drop sonar DB user
+      become_user: postgres
+      postgresql_user:
+        name: "{{ sonar_db_user }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Stop and disable PostgreSQL service
+      systemd:
+        name: postgresql-14
+        enabled: no
+        state: stopped
+      ignore_errors: true
+
+    - name: Remove PostgreSQL data directory
+      file:
+        path: /var/lib/pgsql/14/data
+        state: absent
+      ignore_errors: true
+
+    - name: Remove PostgreSQL packages
+      dnf:
+        name:
+          - postgresql14
+          - postgresql14-server
+          - postgresql14-contrib
+        state: absent
+      ignore_errors: true
+
+    - name: Remove PostgreSQL repo file
+      file:
+        path: /etc/yum.repos.d/pgdg-redhat-all.repo
+        state: absent
+      ignore_errors: true
+
+    - name: Remove PostgreSQL repo RPM
+      file:
+        path: /tmp/pgdg-redhat-repo-latest.noarch.rpm
+        state: absent
+
+    - name: Remove SonarQube sysctl config
+      file:
+        path: /etc/sysctl.d/99-sonarqube.conf
+        state: absent
+
+    - name: Remove SonarQube limits config
+      file:
+        path: /etc/security/limits.d/99-sonarqube.conf
+        state: absent
+
+    - name: Remove python3-psycopg2 package
+      dnf:
+        name: python3-psycopg2
+        state: absent
+      ignore_errors: true
+
+    - name: Close SonarQube and HTTP ports in firewall
+      firewalld:
+        port: "{{ item }}"
+        permanent: yes
+        state: present
+      loop:
+        - 80/tcp
+        - 9000/tcp
+        - 9001/tcp
+      notify: Reload firewall
+
+  handlers:
+    - name: Reload firewall
+      ansible.builtin.command: firewall-cmd --reload

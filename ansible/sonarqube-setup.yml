@@ -1,0 +1,224 @@
+---
+# Set up file for centos
+- name: Install and Configure SonarQube on CentOS 9
+  hosts: sonarqubeserver
+  become: yes
+  vars:
+    sonar_version: "8.3.0.34182"
+    sonar_user: sonar
+    sonar_group: sonar
+    sonar_db_user: sonar
+    sonar_db_password: admin123
+    sonar_db_name: sonarqube
+    sonar_download_url: "https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-{{ sonar_version }}.zip"
+    sonar_home: /opt/sonarqube
+
+  tasks:
+
+    - name: Set sysctl parameters
+      copy:
+        dest: /etc/sysctl.d/99-sonarqube.conf
+        content: |
+          vm.max_map_count = 262144
+          fs.file-max = 65536
+      notify: Reload sysctl
+
+    - name: Set security limits for SonarQube user
+      copy:
+        dest: /etc/security/limits.d/99-sonarqube.conf
+        content: |
+          sonar         -    nofile    65536
+          sonar         -    nproc     4096
+
+    - name: Install required packages
+      dnf:
+        name:
+          - java-11-openjdk-devel
+          - wget
+          - unzip
+          - firewalld
+          - python3-psycopg2
+        state: present
+
+    - name: Download PostgreSQL 14 repository RPM
+      get_url:
+        url: https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+        dest: /tmp/pgdg-redhat-repo-latest.noarch.rpm
+        mode: '0644'
+
+    - name: Install PostgreSQL 14 repository RPM without GPG check
+      dnf:
+        name: /tmp/pgdg-redhat-repo-latest.noarch.rpm
+        state: present
+        disable_gpg_check: yes
+
+    - name: Disable built-in PostgreSQL module
+      shell: dnf -qy module disable postgresql
+
+    - name: Install PostgreSQL 14 server and client
+      dnf:
+        name:
+          - postgresql14-server
+          - postgresql14
+        state: present
+
+    - name: Initialize PostgreSQL database
+      shell: /usr/pgsql-14/bin/postgresql-14-setup initdb
+      args:
+        creates: /var/lib/pgsql/14/data/PG_VERSION
+
+    - name: Enable and start PostgreSQL service
+      systemd:
+        name: postgresql-14
+        enabled: true
+        state: started
+
+    - name: Set postgres user password
+      shell: echo "postgres:{{ sonar_db_password }}" | chpasswd
+
+    - name: Create sonar database role
+      become: true
+      become_user: postgres
+      postgresql_user:
+        name: "{{ sonar_db_user }}"
+        password: "{{ sonar_db_password }}"
+        login_user: "postgres"
+
+    - name: Create sonar database
+      become: true
+      become_user: postgres
+      postgresql_db:
+        name: "{{ sonar_db_name }}"
+        owner: "{{ sonar_db_user }}"
+        login_user: "postgres"
+
+    - name: Grant privileges on the database
+      become: true
+      become_user: postgres
+      postgresql_privs:
+        db: "{{ sonar_db_name }}"
+        role: "{{ sonar_db_user }}"
+        privs: ALL
+        type: database
+        login_user: "postgres"
+
+    - name: Create SonarQube install directory
+      file:
+        path: "{{ sonar_home }}"
+        state: directory
+        mode: '0755'
+
+    - name: Download SonarQube
+      get_url:
+        url: "{{ sonar_download_url }}"
+        dest: "/tmp/sonarqube-{{ sonar_version }}.zip"
+
+    - name: Unzip SonarQube
+      unarchive:
+        src: "/tmp/sonarqube-{{ sonar_version }}.zip"
+        dest: /opt
+        remote_src: yes
+
+    - name: Remove existing sonar_home dir (if any)
+      file:
+        path: "{{ sonar_home }}"
+        state: absent
+
+    - name: Rename SonarQube dir
+      command: mv "/opt/sonarqube-{{ sonar_version }}" "{{ sonar_home }}"
+
+    - name: Create sonar group
+      group:
+        name: "{{ sonar_group }}"
+        state: present
+
+    - name: Create sonar user
+      user:
+        name: "{{ sonar_user }}"
+        group: "{{ sonar_group }}"
+        home: "{{ sonar_home }}"
+        shell: /bin/bash
+        create_home: no
+        system: no
+
+    - name: Set ownership of SonarQube files
+      file:
+        path: "{{ sonar_home }}"
+        state: directory
+        owner: "{{ sonar_user }}"
+        group: "{{ sonar_group }}"
+        recurse: yes
+
+    - name: Ensure SonarQube conf directory exists
+      file:
+        path: "{{ sonar_home }}/conf"
+        state: directory
+        owner: "{{ sonar_user }}"
+        group: "{{ sonar_group }}"
+        mode: '0755'
+
+    - name: Configure sonar.properties
+      copy:
+        dest: "{{ sonar_home }}/conf/sonar.properties"
+        content: |
+          sonar.jdbc.username={{ sonar_db_user }}
+          sonar.jdbc.password={{ sonar_db_password }}
+          sonar.jdbc.url=jdbc:postgresql://localhost/{{ sonar_db_name }}
+          sonar.web.host=0.0.0.0
+          sonar.web.port=9000
+          sonar.web.javaAdditionalOpts=-server
+          sonar.search.javaOpts=-Xmx512m -Xms512m -XX:+HeapDumpOnOutOfMemoryError
+          sonar.log.level=INFO
+          sonar.path.logs=logs
+        owner: "{{ sonar_user }}"
+        group: "{{ sonar_group }}"
+
+    - name: Create SonarQube systemd service
+      copy:
+        dest: /etc/systemd/system/sonarqube.service
+        content: |
+          [Unit]
+          Description=SonarQube service
+          After=network.target postgresql-14.service
+
+          [Service]
+          Type=forking
+          User={{ sonar_user }}
+          Group={{ sonar_group }}
+          ExecStart={{ sonar_home }}/bin/linux-x86-64/sonar.sh start
+          ExecStop={{ sonar_home }}/bin/linux-x86-64/sonar.sh stop
+          Restart=always
+          LimitNOFILE=65536
+          LimitNPROC=4096
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start SonarQube
+      systemd:
+        name: sonarqube
+        enabled: yes
+        state: started
+
+    - name: Open HTTP and SonarQube ports on firewall
+      firewalld:
+        port: "{{ item }}"
+        permanent: yes
+        state: enabled
+      loop:
+        - 80/tcp
+        - 9000/tcp
+        - 9001/tcp
+      notify: Reload firewall
+
+  handlers:
+    - name: Reload sysctl
+      ansible.builtin.command: sysctl --system
+
+    - name: Reload firewall
+      firewalld:
+        state: reloaded

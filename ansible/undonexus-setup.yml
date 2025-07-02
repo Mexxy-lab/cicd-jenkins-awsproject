@@ -1,0 +1,59 @@
+---
+- name: Undo Nexus Repository Setup
+  hosts: nexusserver
+  become: yes
+  vars:
+    nexus_user: nexus
+    nexus_install_dir: /opt/nexus
+    nexus_work_dir: /opt/sonatype-work
+    nexus_temp_dir: /tmp/nexus
+    nexus_service_file: /etc/systemd/system/nexus.service
+
+  tasks:
+    - name: Stop Nexus service if running
+      systemd:
+        name: nexus
+        state: stopped
+      ignore_errors: true
+
+    - name: Disable Nexus service
+      systemd:
+        name: nexus
+        enabled: false
+      ignore_errors: true
+
+    - name: Remove Nexus systemd service file
+      file:
+        path: "{{ nexus_service_file }}"
+        state: absent
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Remove Nexus install directory
+      file:
+        path: "{{ nexus_install_dir }}"
+        state: absent
+
+    - name: Remove Nexus work directory
+      file:
+        path: "{{ nexus_work_dir }}"
+        state: absent
+
+    - name: Remove Nexus temporary directory
+      file:
+        path: "{{ nexus_temp_dir }}"
+        state: absent
+
+    - name: Remove Nexus user
+      user:
+        name: "{{ nexus_user }}"
+        state: absent
+        remove: yes
+
+    - name: Remove Java if not needed
+      package:
+        name: java-1.8.0-openjdk
+        state: absent
+      ignore_errors: true

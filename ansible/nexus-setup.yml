@@ -1,0 +1,137 @@
+---
+- name: Setup Nexus Repository
+  hosts: nexusserver
+  become: yes
+  vars:
+    java_package: java-1.8.0-openjdk.x86_64
+    java_home: /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.362.b09-4.el9.x86_64
+    nexus_url: https://download.sonatype.com/nexus/3/nexus-3.68.1-02-unix.tar.gz
+    nexus_install_dir: /opt/nexus
+    nexus_temp_dir: /tmp/nexus
+    nexus_user: nexus
+    nexus_extracted_dir: nexus-3.68.1-02
+    nexus_work_dir: /opt/sonatype-work
+
+  tasks:
+    - name: Install Java 8 and wget
+      yum:
+        name:
+          - "{{ java_package }}"
+          - wget
+        state: present
+
+    - name: Create Nexus directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ nexus_install_dir }}"
+        - "{{ nexus_temp_dir }}"
+        - "{{ nexus_work_dir }}"
+
+    - name: Download Nexus
+      get_url:
+        url: "{{ nexus_url }}"
+        dest: "{{ nexus_temp_dir }}/nexus.tar.gz"
+        mode: '0644'
+
+    - name: Extract Nexus
+      unarchive:
+        src: "{{ nexus_temp_dir }}/nexus.tar.gz"
+        dest: "{{ nexus_temp_dir }}"
+        remote_src: yes
+
+    - name: Create nexus user
+      user:
+        name: "{{ nexus_user }}"
+        state: present
+        shell: /bin/bash
+
+    - name: Copy Nexus to install dir
+      copy:
+        src: "{{ nexus_temp_dir }}/{{ nexus_extracted_dir }}/"
+        dest: "{{ nexus_install_dir }}/{{ nexus_extracted_dir }}/"
+        remote_src: yes
+
+    - name: Set ownership of Nexus directory
+      file:
+        path: "{{ nexus_install_dir }}"
+        owner: "{{ nexus_user }}"
+        group: "{{ nexus_user }}"
+        recurse: yes
+
+    - name: Configure nexus work dir in properties file
+      lineinfile:
+        path: "{{ nexus_install_dir }}/{{ nexus_extracted_dir }}/etc/nexus-default.properties"
+        regexp: '^nexus.sonatype-work='
+        line: "nexus.sonatype-work={{ nexus_work_dir }}"
+        owner: "{{ nexus_user }}"
+        group: "{{ nexus_user }}"
+        create: yes
+
+    - name: Create nexus.rc file to set run_as_user
+      copy:
+        dest: "{{ nexus_install_dir }}/{{ nexus_extracted_dir }}/bin/nexus.rc"
+        content: |
+          run_as_user="{{ nexus_user }}"
+        owner: "{{ nexus_user }}"
+        group: "{{ nexus_user }}"
+
+    - name: Create systemd service for Nexus
+      copy:
+        dest: /etc/systemd/system/nexus.service
+        content: |
+          [Unit]
+          Description=nexus service
+          After=network.target
+
+          [Service]
+          Type=forking
+          LimitNOFILE=65536
+          Environment=INSTALL4J_JAVA_HOME={{ java_home }}
+          ExecStart={{ nexus_install_dir }}/{{ nexus_extracted_dir }}/bin/nexus start
+          ExecStop={{ nexus_install_dir }}/{{ nexus_extracted_dir }}/bin/nexus stop
+          User={{ nexus_user }}
+          Restart=on-abort
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start Nexus
+      systemd:
+        name: nexus
+        enabled: yes
+        state: started
+
+    ## Play for installing Maven
+
+    # - name: Install Maven 3.9.10
+    #   get_url:
+    #     url: https://downloads.apache.org/maven/maven-3/3.9.10/binaries/apache-maven-3.9.10-bin.tar.gz
+    #     dest: /opt/apache-maven-3.9.10-bin.tar.gz
+
+    # - name: Extract Maven
+    #   unarchive:
+    #     src: /opt/apache-maven-3.9.10-bin.tar.gz
+    #     dest: /opt/
+    #     remote_src: yes
+
+    # - name: Symlink Maven
+    #   file:
+    #     src: /opt/apache-maven-3.9.10
+    #     dest: /opt/maven
+    #     state: link
+
+    # - name: Set Maven environment variables
+    #   copy:
+    #     dest: /etc/profile.d/maven.sh
+    #     content: |
+    #       export M2_HOME=/opt/maven
+    #       export MAVEN_HOME=/opt/maven
+    #       export PATH=$MAVEN_HOME/bin:$PATH
+    #     mode: '0755'
