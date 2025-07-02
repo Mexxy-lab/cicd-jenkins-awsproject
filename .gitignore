@@ -1,0 +1,33 @@
+# Ignore Vagrant-related files
+.vagrant/
+
+# VirtualBox VM files (optional, if not needed in repo)
+*.box
+*.log
+*.vdi
+*.vmdk
+
+# SSH key pairs (if generated for provisioning)
+*.pem
+*.pub
+
+# General OS/filesystem junk
+.DS_Store
+Thumbs.db
+ehthumbs.db
+*.swp
+*.swo
+
+# Windows-specific
+*.lnk
+*.bak
+
+# IDE/Editor settings
+.idea/
+.vscode/
+*.iml
+
+# Provisioning logs/output
+*.log
+*.out
+*.retry
