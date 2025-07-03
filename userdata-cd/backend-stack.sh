@@ -26,6 +26,9 @@ sudo mysql -u root -p"$DATABASE_PASS" -e "grant all privileges on accounts.* TO 
 sudo mysql -u root -p"$DATABASE_PASS" -e "grant all privileges on accounts.* TO 'admin'@'%' identified by 'admin123'"
 sudo mysql -u root -p"$DATABASE_PASS" accounts < /tmp/vprofile-project/src/main/resources/db_backup.sql
 sudo mysql -u root -p"$DATABASE_PASS" -e "FLUSH PRIVILEGES"
+sudo mysql -u root -p"$DATABASE_PASS" accounts
+mysql> show tables;
+mysql> exit;
 
 # Restart mariadb-server
 sudo systemctl restart mariadb
